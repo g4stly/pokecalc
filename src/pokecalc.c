@@ -8,17 +8,50 @@
 #define PKMN_TOKEN_COUNT 15
 #define ERROR_NO_JSON_DATA -4
 
+struct Pokemon {
+	char name[12];
+	int stats[6];
+};
+
+static char* stats_strings[] = {
+	"hp",
+	"attack",
+	"defense",
+	"spattack",
+	"spdefense",
+	"speed"
+};
+
+static char * jsmn_types_strings[] = {
+	"jsmn_undefined",
+	"jsmn_object",
+	"jsmn_array",
+	"jsmn_string",
+	"jsmn_primitive"
+};
+
+static int verbose_flag = 0;
+static char *json_string = NULL;
+
+/* utility */
+void log_msg(const char *fmt, ...);
+void log_error(const char *fmt, ...);
+void parse_or_die(int res);
+int parse_options(int argc, char **argv);
+
+/* actually pokemon related */
+int load_Pokemon(struct Pokemon *p, const char *json_string);
+void print_Pokemon(struct Pokemon *p);
+
+
+/* function definitions */
 void log_msg(const char *fmt, ...) 
 {
+	if (!verbose_flag) return;
 	va_list ap;
 	va_start(ap, fmt);
 	vfprintf(stderr, fmt, ap);
 	va_end(ap);
-
-	/*if (fmt[0] && fmt[strlen(fmt)-1] == ':') {
-		fputc(' ', stderr);
-		perror(NULL);
-	}*/
 }
 
 void log_error(const char *fmt, ...)
@@ -54,31 +87,27 @@ void parse_or_die(int res)
 	}
 }
 
-struct Pokemon {
-	char name[12];
-	int stats[6];
-};
-
-static char* stats_strings[] = {
-	"hp",
-	"attack",
-	"defense",
-	"spattack",
-	"spdefense",
-	"speed"
-};
-
-static char * jsmn_types_strings[] = {
-	"jsmn_undefined",
-	"jsmn_object",
-	"jsmn_array",
-	"jsmn_string",
-	"jsmn_primitive"
-};
-
-int load_Pokemon(struct Pokemon *p, const char *json_string);
-void print_Pokemon(struct Pokemon *p);
-
+int parse_options(int argc, char **argv)
+{
+	int c;
+	while ((c = getopt(argc, argv, "vp:")) != -1) {
+		switch (c) {
+		case 'p':
+			json_string = optarg;
+			break;
+		case 'v':
+			verbose_flag = 1;
+			break;
+		case '?':
+			if (optopt == 'p') {
+				log_error("Option -%c requires an argument.\n", optopt);
+			}
+			return -1;
+			break;
+		}
+	}
+	return 0;
+}
 
 int load_Pokemon(struct Pokemon *p, const char *json_string) 
 {
@@ -164,11 +193,12 @@ void print_Pokemon(struct Pokemon *p)
 
 int main(int argc, char **argv)
 {
+	if (parse_options(argc, argv) < 0) return -1;
+
 	struct Pokemon p;
-	memset(&p, 0, sizeof(struct Pokemon));
 
 	/* parse or die <your_favorite_insult> */
-	parse_or_die(load_Pokemon(&p, argv[1]));
+	parse_or_die(load_Pokemon(&p, json_string));
 
 	print_Pokemon(&p);
 
