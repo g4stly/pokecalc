@@ -43,6 +43,7 @@ char *load_from_file(const char *filename);
 
 /* actually pokemon related */
 int load_Pokemon(struct Pokemon *p, const char *json_string);
+int set_stat_Pokemon(struct Pokemon *p, char *stat_name, int value);
 void print_Pokemon(struct Pokemon *p);
 
 
@@ -222,6 +223,7 @@ int load_Pokemon(struct Pokemon *p, const char *json_string)
 				break;
 			}
 		}
+		if (target < 0 && target != -420) log_msg("unknown key: %s\n", token);
 		free(token);
 	}
 	return 0;
