@@ -31,6 +31,7 @@ static char * jsmn_types_strings[] = {
 };
 
 static int verbose_flag = 0;
+static int from_file_flag = 0;
 static char *json_string = NULL;
 
 /* utility */
@@ -38,6 +39,7 @@ void log_msg(const char *fmt, ...);
 void log_error(const char *fmt, ...);
 void parse_or_die(int res);
 int parse_options(int argc, char **argv);
+char *load_from_file(const char *filename);
 
 /* actually pokemon related */
 int load_Pokemon(struct Pokemon *p, const char *json_string);
@@ -62,11 +64,17 @@ void log_error(const char *fmt, ...)
 	vfprintf(stderr, fmt, ap);
 	va_end(ap);
 
+	if (fmt[0] && fmt[strlen(fmt)-1] == ':') {
+		fputc(' ', stderr);
+		perror(NULL);
+	}
+
 	exit(-1);
 }
 
 void parse_or_die(int res)
 {
+	if (from_file_flag) free(json_string);
 	if (res < 0) {
 		switch(res) {
 		case JSMN_ERROR_INVAL:
@@ -90,18 +98,21 @@ void parse_or_die(int res)
 int parse_options(int argc, char **argv)
 {
 	int c;
-	while ((c = getopt(argc, argv, "vp:")) != -1) {
+	while ((c = getopt(argc, argv, "vp:f:")) != -1) {
 		switch (c) {
 		case 'p':
 			json_string = optarg;
+			break;
+		case 'f':
+			from_file_flag = 1;
+			json_string = load_from_file(optarg);
 			break;
 		case 'v':
 			verbose_flag = 1;
 			break;
 		case '?':
-			if (optopt == 'p') {
-				log_error("Option -%c requires an argument.\n", optopt);
-			}
+			if (optopt == 'p') log_error("Option -%c requires an argument.\n", optopt);
+			if (optopt == 'f') log_error("Option -%c requires an argument.\n", optopt);
 			return -1;
 			break;
 		}
@@ -109,8 +120,41 @@ int parse_options(int argc, char **argv)
 	return 0;
 }
 
+char *load_from_file(const char *filename)
+{
+	int res;
+	long length;
+	char *string = NULL;
+	FILE *file = fopen(filename, "r");
+
+	res = fseek(file, 0, SEEK_END);
+	if (res < 0) log_error("fseek:");
+	log_msg("first fseek returned %i\n", res);
+
+	length = ftell(file);
+	if (length < 0) log_error("ftell:");
+	log_msg("file length: %li\n", length);
+
+	res = fseek(file, 0, SEEK_SET);
+	if (res < 0) log_error("fseek:");
+	log_msg("second fseek returned %i\n", res);
+
+	string = malloc(sizeof(char) * length + 1);
+	if (!string) log_error("malloc():");
+
+	size_t bytes_read = fread(string, sizeof(char), length, file);
+	log_msg("read %i bytes from %s\n", bytes_read, filename);
+	if (bytes_read != length) log_error("bytes read did not match length of file...");
+
+	fclose(file);
+
+	return string;
+}
+
 int load_Pokemon(struct Pokemon *p, const char *json_string) 
 {
+	log_msg("now parsing json\n");
+
 	 /* parse json into tokens array */
 	int res;
 	int token_count;
@@ -196,6 +240,7 @@ int main(int argc, char **argv)
 	if (parse_options(argc, argv) < 0) return -1;
 
 	struct Pokemon p;
+	memset(&p, 0, sizeof(struct Pokemon));
 
 	/* parse or die <your_favorite_insult> */
 	parse_or_die(load_Pokemon(&p, json_string));
