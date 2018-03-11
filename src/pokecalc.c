@@ -8,9 +8,16 @@
 #define PKMN_TOKEN_COUNT 15
 #define ERROR_NO_JSON_DATA -4
 
+enum pokemon_nature {
+	ADAMANT,
+	MODEST,
+	CAREFUL
+};
+
 struct Pokemon {
 	char name[12];
 	int stats[6];
+	enum pokemon_nature nature;
 };
 
 static char* stats_strings[] = {
@@ -22,12 +29,10 @@ static char* stats_strings[] = {
 	"speed"
 };
 
-static char * jsmn_types_strings[] = {
-	"jsmn_undefined",
-	"jsmn_object",
-	"jsmn_array",
-	"jsmn_string",
-	"jsmn_primitive"
+static char *nature_strings[] = {
+	"adamant",
+	"modest",
+	"careful"
 };
 
 static int verbose_flag = 0;
@@ -39,11 +44,12 @@ void log_msg(const char *fmt, ...);
 void log_error(const char *fmt, ...);
 void parse_or_die(int res);
 int parse_options(int argc, char **argv);
+char *load_token(jsmntok_t token, const char *json_string);
 char *load_from_file(const char *filename);
 
 /* actually pokemon related */
+int set_Pokemon(struct Pokemon *p, char *key, char *value);
 int load_Pokemon(struct Pokemon *p, const char *json_string);
-int set_stat_Pokemon(struct Pokemon *p, char *stat_name, int value);
 void print_Pokemon(struct Pokemon *p);
 
 
@@ -121,6 +127,21 @@ int parse_options(int argc, char **argv)
 	return 0;
 }
 
+char *load_token(jsmntok_t token, const char *json_string)
+{
+	int size;
+	char *token_string = NULL;
+	size = (token.end - token.start) + 1;
+	log_msg("size of token: %i\n", size);
+
+	token_string = malloc(sizeof(char)*size+1);
+	if (!token_string) log_error("malloc():");
+
+	snprintf(token_string, size, json_string + token.start);
+	token_string[size] = '\0';
+	return token_string;
+}
+
 char *load_from_file(const char *filename)
 {
 	int res;
@@ -152,11 +173,52 @@ char *load_from_file(const char *filename)
 	return string;
 }
 
+int set_Pokemon(struct Pokemon *p, char *key, char *value)
+{
+	int key_size = strlen(key)+1;
+	int value_size = strlen(value)+1;
+
+	char local_key[key_size+1];
+	char local_value[value_size+1];
+
+	snprintf(local_key, key_size, key);
+	snprintf(local_value, value_size, value);
+
+	local_key[key_size] = '\0';
+	local_value[value_size] = '\0';
+
+	free(key);
+	free(value);
+
+	log_msg("setting %s to %s\n", local_key, local_value);
+
+	for (int i = 0; i < 6; i++) {
+		if (!strcmp(stats_strings[i], local_key)) {
+			p->stats[i] = atoi(local_value);
+			return 0;
+		}
+	}
+
+	if (!strcmp(local_key, "name")) {
+		snprintf(p->name, value_size, local_value);
+		p->name[11] = '\0'; // no matter what, preserve null byte here
+		return 0;
+	}
+
+	if (!strcmp(local_key, "nature")) for (int i = 0; i < 3; i++) {
+		if (strcmp(value, nature_strings[i]) == 0) {
+			p->nature = i;
+			return 0;
+		}
+	}
+
+	return -1;
+}
+
 int load_Pokemon(struct Pokemon *p, const char *json_string) 
 {
 	log_msg("now parsing json\n");
 
-	 /* parse json into tokens array */
 	int res;
 	int token_count;
 	jsmn_parser parser;	
@@ -168,63 +230,28 @@ int load_Pokemon(struct Pokemon *p, const char *json_string)
 	token_count = jsmn_parse(&parser, json_string, strlen(json_string), NULL, 0);
 	log_msg("token count = %i\n", token_count);
 
-	jsmntok_t tokens[token_count]; // var array, consider making it compile time constant
-	jsmn_init(&parser); // reset parser here in order to re use it
+	jsmntok_t tokens[token_count]; 
+	jsmn_init(&parser); 
 	res = jsmn_parse(&parser, json_string, strlen(json_string), tokens, token_count);
 
 	if (res < 0) return res;
 
-	 /* parse token array into pokemon struct */
-	char *token;
-	int size, target = -1;
-	for (int i = 1; i < token_count; i++) {
-		log_msg("loop iteration: %i\n", i);
+	char *key, *value;
+	for (int i = 1; i < token_count; i += 2) {
+		log_msg("\nloop iteration: %i\n", i);
 
-		/* only process strings and primitives */
-		log_msg("token type: %s\n", jsmn_types_strings[tokens[i].type]);
-		if (tokens[i].type != JSMN_STRING && tokens[i].type != JSMN_PRIMITIVE) continue;
+		/* confirm key is string and value is string or primitive */
+		if (tokens[i].type != JSMN_STRING) continue;
+		if (tokens[i+1].type != JSMN_PRIMITIVE && tokens[i+1].type != JSMN_STRING) continue;
 
-		/* calculate size, allocate size bytes for
-		 * string representation of token,
-		 * be sure to append null byte */
-		size = tokens[i].end - tokens[i].start;
-		log_msg("size of current token: %i\n", size);
-		token = malloc(sizeof(char)*size+1);
-		snprintf(token, size+1, json_string + tokens[i].start);
-		token[size+1] = '\0';
-		log_msg("token = %s\n\n", token);
+		/* load_token calls malloc */
+		key = load_token(tokens[i], json_string);
+		log_msg("key: %s\n", key);
+		value = load_token(tokens[i+1], json_string);
+		log_msg("value: %s\n", value);
 
-		/* if target > 0, then the last token was a key, this is a value */
-		if (target >= 0) {
-			if (tokens[i].type != JSMN_PRIMITIVE) return JSMN_ERROR_INVAL;
-			p->stats[target] = atoi(token);
-			target = -1;
-			continue;
-		/* if target == -420, then the last token was the name key
-		 * TODO: find a better way to do this */
-		} else if (target == -420) {
-			memcpy(p->name, token, size+1);
-			target = -1;
-			continue;
-		}
-
-		/* if target isn't set, this token should be a key.
-		 * if key is name, set target to -420 so we don't try
-		 * to index our p->stats array with it,
-		 * otherwise, loop over stats_strings array */
-		if (strcmp(token, "name") == 0) {
-			target = -420;
-			continue;
-		}
-
-		for (int j = 0; j < 6; j++) {
-			if (strcmp(token, stats_strings[j]) == 0) {
-				target = j;
-				break;
-			}
-		}
-		if (target < 0 && target != -420) log_msg("unknown key: %s\n", token);
-		free(token);
+		/* set_Pokemon calls free */
+		if (set_Pokemon(p, key, value) < 0) log_msg("Invalid key!\n");
 	}
 	return 0;
 }
@@ -232,7 +259,7 @@ int load_Pokemon(struct Pokemon *p, const char *json_string)
 void print_Pokemon(struct Pokemon *p)
 {
 	/* TODO: eventually, don't make repeated calls to fprintf */
-	fprintf(stdout, "== %s ==\n@ level 50\n", p->name);
+	fprintf(stdout, "== %s ==\nlevel: 50\nnature: %s\n", p->name, nature_strings[p->nature]);
 	for (int i = 0; i < 6; i++) 
 		fprintf(stdout, "%s: %i\n", stats_strings[i], p->stats[i]);
 }
@@ -244,7 +271,6 @@ int main(int argc, char **argv)
 	struct Pokemon p;
 	memset(&p, 0, sizeof(struct Pokemon));
 
-	/* parse or die <your_favorite_insult> */
 	parse_or_die(load_Pokemon(&p, json_string));
 
 	print_Pokemon(&p);
