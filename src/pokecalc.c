@@ -229,16 +229,21 @@ int set_Pokemon(char *key, char *value)
 		}
 	}
 
+	// for now, test against string literals
 	if (!strcmp(local_key, "name")) {
 		snprintf(pokemon.name, value_size, local_value);
 		pokemon.name[11] = '\0'; // no matter what, preserve null byte here
 		return 0;
 	}
 
+	if (!strcmp(local_key, "level")) {
+		pokemon.level = atoi(local_value);
+	}
+
 	if (!strcmp(local_key, "nature")) for (int i = 0; i < PKMN_NATURE_COUNT; i++) {
 		log_msg("comparing %s to %s\n", local_value, natures[i].name);
 		if (strcmp(local_value, natures[i].name) == 0) {
-			pokemon.nature = natures + (sizeof(struct Nature) * i);
+			pokemon.nature = &natures[i];
 			return 0;
 		}
 	}
