@@ -5,19 +5,31 @@
 #include <string.h>
 #include <unistd.h>
 
+// these are used to help define natures 
+#define ATTACK 1
+#define DEFENSE 2
+#define SPATTACK 3
+#define SPDEFENSE 4
+#define SPEED 5
+
 #define PKMN_TOKEN_COUNT 15
+#define PKMN_NATURE_COUNT 25
 #define ERROR_NO_JSON_DATA -4
 
-enum pokemon_nature {
-	ADAMANT,
-	MODEST,
-	CAREFUL
+
+struct Nature {
+	const char *name;
+	int beneficial; // will correspond with indexs in "stats" arrays
+	int detrimental; // ^^^^^^^^^^^^^^
 };
 
 struct Pokemon {
 	char name[12];
+	int level;
 	int stats[6];
-	enum pokemon_nature nature;
+	int IV[6];
+	int EV[6];
+	struct Nature *nature;
 };
 
 static char* stats_strings[] = {
@@ -29,15 +41,11 @@ static char* stats_strings[] = {
 	"speed"
 };
 
-static char *nature_strings[] = {
-	"adamant",
-	"modest",
-	"careful"
-};
-
 static int verbose_flag = 0;
 static int from_file_flag = 0;
 static char *json_string = NULL;
+static struct Pokemon pokemon;
+static struct Nature *natures;
 
 /* utility */
 void log_msg(const char *fmt, ...);
@@ -46,11 +54,15 @@ void parse_or_die(int res);
 int parse_options(int argc, char **argv);
 char *load_token(jsmntok_t token, const char *json_string);
 char *load_from_file(const char *filename);
+int calc_stat(int base);
 
 /* actually pokemon related */
-int set_Pokemon(struct Pokemon *p, char *key, char *value);
-int load_Pokemon(struct Pokemon *p, const char *json_string);
-void print_Pokemon(struct Pokemon *p);
+void create_Nature(struct Nature *n, const char *name, int up, int bad);
+double nature_multiplier(int stat);
+int set_Pokemon(char *key, char *value);
+int load_Pokemon(const char *json_string);
+void grow_Pokemon(void);
+void print_Pokemon(void);
 
 
 /* function definitions */
@@ -125,8 +137,7 @@ int parse_options(int argc, char **argv)
 		}
 	}
 	return 0;
-}
-
+} 
 char *load_token(jsmntok_t token, const char *json_string)
 {
 	int size;
@@ -173,7 +184,26 @@ char *load_from_file(const char *filename)
 	return string;
 }
 
-int set_Pokemon(struct Pokemon *p, char *key, char *value)
+int calc_stat(int stat)
+{
+	return (((pokemon.stats[stat] * 2) + (pokemon.EV[stat] / 4) + pokemon.IV[stat]) * pokemon.level) / 100;
+}
+
+void create_Nature(struct Nature *n, const char *name, int up, int down)
+{
+	n->name 	= name;
+	n->beneficial 	= up;
+	n->detrimental 	= down;
+}
+
+double nature_multiplier(int stat)
+{
+	if (pokemon.nature->beneficial == stat) return 1.1;
+	if (pokemon.nature->detrimental == stat) return 0.9;
+	return 1.0;
+}
+
+int set_Pokemon(char *key, char *value)
 {
 	int key_size = strlen(key)+1;
 	int value_size = strlen(value)+1;
@@ -194,20 +224,21 @@ int set_Pokemon(struct Pokemon *p, char *key, char *value)
 
 	for (int i = 0; i < 6; i++) {
 		if (!strcmp(stats_strings[i], local_key)) {
-			p->stats[i] = atoi(local_value);
+			pokemon.stats[i] = atoi(local_value);
 			return 0;
 		}
 	}
 
 	if (!strcmp(local_key, "name")) {
-		snprintf(p->name, value_size, local_value);
-		p->name[11] = '\0'; // no matter what, preserve null byte here
+		snprintf(pokemon.name, value_size, local_value);
+		pokemon.name[11] = '\0'; // no matter what, preserve null byte here
 		return 0;
 	}
 
-	if (!strcmp(local_key, "nature")) for (int i = 0; i < 3; i++) {
-		if (strcmp(value, nature_strings[i]) == 0) {
-			p->nature = i;
+	if (!strcmp(local_key, "nature")) for (int i = 0; i < PKMN_NATURE_COUNT; i++) {
+		log_msg("comparing %s to %s\n", local_value, natures[i].name);
+		if (strcmp(local_value, natures[i].name) == 0) {
+			pokemon.nature = natures + (sizeof(struct Nature) * i);
 			return 0;
 		}
 	}
@@ -215,7 +246,7 @@ int set_Pokemon(struct Pokemon *p, char *key, char *value)
 	return -1;
 }
 
-int load_Pokemon(struct Pokemon *p, const char *json_string) 
+int load_Pokemon(const char *json_string) 
 {
 	log_msg("now parsing json\n");
 
@@ -251,29 +282,83 @@ int load_Pokemon(struct Pokemon *p, const char *json_string)
 		log_msg("value: %s\n", value);
 
 		/* set_Pokemon calls free */
-		if (set_Pokemon(p, key, value) < 0) log_msg("Invalid key!\n");
+		if (set_Pokemon(key, value) < 0) log_msg("Invalid key!\n");
 	}
 	return 0;
 }
 
-void print_Pokemon(struct Pokemon *p)
+void grow_Pokemon(void)
+{
+	pokemon.stats[0] = calc_stat(0) + 10 + pokemon.level;
+	for (int i = 1; i < 6; i++) {
+		// nature_multiplier decideds based on i (and pokemon.nature) whether the multiplier is 1, .9, or 1.1
+		pokemon.stats[i] = (calc_stat(i) + 5) * nature_multiplier(i);
+	}
+}
+
+void print_Pokemon(void)
 {
 	/* TODO: eventually, don't make repeated calls to fprintf */
-	fprintf(stdout, "== %s ==\nlevel: 50\nnature: %s\n", p->name, nature_strings[p->nature]);
+	fprintf(stdout, "== %s ==\nlevel: %i\nnature: %s\n", pokemon.name, pokemon.level, pokemon.nature->name);
 	for (int i = 0; i < 6; i++) 
-		fprintf(stdout, "%s: %i\n", stats_strings[i], p->stats[i]);
+		fprintf(stdout, "%s: %i\n", stats_strings[i], pokemon.stats[i]);
 }
 
 int main(int argc, char **argv)
 {
+	struct Nature natures_memory[25];
+	natures = natures_memory;
+
+	// create natures 	   |name|	|inc'd stat|	|decreased stat|
+	create_Nature(&natures[0], "hardy", 	0, 		0);
+	create_Nature(&natures[1], "lonely", 	ATTACK, 	DEFENSE);
+	create_Nature(&natures[2], "brave", 	ATTACK, 	SPEED);
+	create_Nature(&natures[3], "adamant", 	ATTACK, 	SPATTACK);
+	create_Nature(&natures[4], "naughty", 	ATTACK, 	SPDEFENSE);
+
+	create_Nature(&natures[5], "bold", 	DEFENSE,	ATTACK);
+	create_Nature(&natures[6], "docile", 	0, 		0);
+	create_Nature(&natures[7], "relaxed", 	DEFENSE, 	SPEED);
+	create_Nature(&natures[8], "impish", 	DEFENSE, 	SPATTACK);
+	create_Nature(&natures[9], "lax", 	DEFENSE, 	SPDEFENSE);
+
+	create_Nature(&natures[10], "timid", 	SPEED, 		ATTACK);
+	create_Nature(&natures[11], "hasty", 	SPEED,		DEFENSE);
+	create_Nature(&natures[12], "serious", 	0, 		0);
+	create_Nature(&natures[13], "jolly", 	SPEED, 		0);
+	create_Nature(&natures[14], "naive", 	SPEED, 	DEFENSE);
+
+	create_Nature(&natures[15], "modest", 	SPATTACK, 	ATTACK);
+	create_Nature(&natures[16], "mild", 	SPATTACK, 	DEFENSE);
+	create_Nature(&natures[17], "quiet", 	SPATTACK, 	SPEED);
+	create_Nature(&natures[18], "bashful", 	0,		0);
+	create_Nature(&natures[19], "rash", 	SPATTACK, 	SPDEFENSE);
+
+	create_Nature(&natures[20], "calm", 	SPDEFENSE, 	ATTACK);
+	create_Nature(&natures[21], "gentle", 	SPDEFENSE, 	DEFENSE);
+	create_Nature(&natures[22], "sassy", 	SPDEFENSE, 	SPEED);
+	create_Nature(&natures[23], "careful", 	SPDEFENSE, 	SPATTACK);
+	create_Nature(&natures[24], "quirky", 	0,		0);
+
+	// zero out our memory
+	memset(&pokemon, 0, sizeof(struct Pokemon));
+
+	// set default pokemon values
+	pokemon.level = 100;
+	pokemon.nature = &natures[12];
+	for (int i = 0; i < 6; i++) pokemon.IV[i] = 31;
+
+	// parse options
 	if (parse_options(argc, argv) < 0) return -1;
 
-	struct Pokemon p;
-	memset(&p, 0, sizeof(struct Pokemon));
+	// parse json
+	parse_or_die(load_Pokemon(json_string));
 
-	parse_or_die(load_Pokemon(&p, json_string));
+	// calculate stats
+	grow_Pokemon();
 
-	print_Pokemon(&p);
+	// print stats
+	print_Pokemon();
 
 	return 0;
 }
