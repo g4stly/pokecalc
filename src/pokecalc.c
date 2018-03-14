@@ -15,6 +15,7 @@
 #define PKMN_TOKEN_COUNT 15
 #define PKMN_NATURE_COUNT 25
 #define ERROR_NO_JSON_DATA -4
+#define COMMA_ARG_LIMIT 3
 
 
 struct Nature {
@@ -52,7 +53,9 @@ void log_msg(const char *fmt, ...);
 void log_error(const char *fmt, ...);
 void parse_or_die(int res);
 int parse_options(int argc, char **argv);
+void parse_stat_option(const char *option);
 char *load_token(jsmntok_t token, const char *json_string);
+char *load_comma_arg(const char *arg, int size);
 char *load_from_file(const char *filename);
 int calc_stat(int base);
 
@@ -117,8 +120,9 @@ void parse_or_die(int res)
 int parse_options(int argc, char **argv)
 {
 	int c;
-	while ((c = getopt(argc, argv, "vp:f:")) != -1) {
+	while ((c = getopt(argc, argv, "vp:f:s:")) != -1) {
 		switch (c) {
+		// options with regard to where we get our json
 		case 'p':
 			json_string = optarg;
 			break;
@@ -126,6 +130,11 @@ int parse_options(int argc, char **argv)
 			from_file_flag = 1;
 			json_string = load_from_file(optarg);
 			break;
+		// options with regard to our stats
+		case 's':
+			parse_stat_option(optarg);
+			break;
+		// meta options
 		case 'v':
 			verbose_flag = 1;
 			break;
@@ -138,6 +147,66 @@ int parse_options(int argc, char **argv)
 	}
 	return 0;
 } 
+
+void parse_stat_option(const char *option)
+{
+	log_msg("parsing new stat\n");
+	// find the position of the first two commas
+	int positions[COMMA_ARG_LIMIT];
+	int i = 0, counted = 0;
+	int size = strlen(option);
+	
+	while (counted < COMMA_ARG_LIMIT && i < size) {	// it werks, trust me
+		if (option[i++] == ',') positions[counted++] = i;
+	}
+	if (counted < 1) { // ev's are required, therefore so is atleast one comma
+		log_msg("invalid stat; missing a comma, ignoring");
+		return;
+	}
+
+	char *stat_name, *ev_amount, *iv_amount;
+
+	// read the first word into stat_name
+	size = positions[0] - 1;  // length from start to first comma
+	stat_name = load_comma_arg(option, size);
+	log_msg("stat name: %s\n", stat_name);
+
+	// read the ev count into ev_amount
+	size = (positions[1] - positions[0]) - 1;
+	ev_amount = load_comma_arg(option+positions[0], size);
+	log_msg("ev count: %s\n", ev_amount);
+
+	// if we have a third arg, read the iv count into iv_amount
+	if (counted > 2) {
+		size = (strlen(option) - positions[1]) - 1;
+		iv_amount = load_comma_arg(option+positions[1], size);
+		log_msg("iv count: %s\n", iv_amount);
+	}
+
+	// loop through stat strings, look for match
+	int stat = -1;
+	for (int i = 0; i < 6; i++) {
+		log_msg("checking %s against %s\n", stats_strings[i], stat_name);
+		if (!strcmp(stats_strings[i], stat_name)) {
+			stat = i;
+			break;
+		}
+	}
+	if (stat < 0) {
+		log_msg("invalid stat, ignoring\n");
+		return;
+	}
+
+	// the line below is awesome
+	pokemon.EV[stat] = atoi(ev_amount);
+	if (counted > 2) pokemon.IV[stat] = atoi(iv_amount);
+
+
+	// clean up after ourselves
+	free(ev_amount);
+	free(stat_name);
+}
+
 char *load_token(jsmntok_t token, const char *json_string)
 {
 	int size;
@@ -151,6 +220,17 @@ char *load_token(jsmntok_t token, const char *json_string)
 	snprintf(token_string, size, json_string + token.start);
 	token_string[size] = '\0';
 	return token_string;
+}
+
+char *load_comma_arg(const char *arg, int size)
+{
+	char *comma_arg = NULL;
+	comma_arg = malloc(sizeof(char) * size);
+	if (!comma_arg) log_error("malloc():");
+
+	memcpy(comma_arg, arg, size);
+	comma_arg[size] = '\0';
+	return comma_arg;
 }
 
 char *load_from_file(const char *filename)
