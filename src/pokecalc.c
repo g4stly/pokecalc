@@ -120,7 +120,7 @@ void parse_or_die(int res)
 int parse_options(int argc, char **argv)
 {
 	int c;
-	while ((c = getopt(argc, argv, "vp:f:s:")) != -1) {
+	while ((c = getopt(argc, argv, "vp:f:l:n:s:")) != -1) {
 		switch (c) {
 		// options with regard to where we get our json
 		case 'p':
@@ -131,6 +131,12 @@ int parse_options(int argc, char **argv)
 			json_string = load_from_file(optarg);
 			break;
 		// options with regard to our stats
+		case 'l':
+			//set_Pokemon("level", optarg);
+			break;
+		case 'n':
+			//set_Pokemon("nature", optarg);
+			break;
 		case 's':
 			parse_stat_option(optarg);
 			break;
@@ -139,8 +145,8 @@ int parse_options(int argc, char **argv)
 			verbose_flag = 1;
 			break;
 		case '?':
-			if (optopt == 'p') log_error("Option -%c requires an argument.\n", optopt);
-			if (optopt == 'f') log_error("Option -%c requires an argument.\n", optopt);
+			//if (optopt == 'p') log_error("Option -%c requires an argument.\n", optopt);
+			//if (optopt == 'f') log_error("Option -%c requires an argument.\n", optopt);
 			return -1;
 			break;
 		}
@@ -153,6 +159,7 @@ void parse_stat_option(const char *option)
 	log_msg("parsing new stat\n");
 	// find the position of the first two commas
 	int positions[COMMA_ARG_LIMIT];
+	for (int i = 0; i < COMMA_ARG_LIMIT; i++) positions[i] = -1;
 	int i = 0, counted = 0;
 	int size = strlen(option);
 	
@@ -164,7 +171,9 @@ void parse_stat_option(const char *option)
 		return;
 	}
 
-	char *stat_name, *ev_amount, *iv_amount;
+	char *stat_name = NULL;
+	char *ev_amount = NULL;
+	char *iv_amount = NULL;
 
 	// read the first word into stat_name
 	size = positions[0] - 1;  // length from start to first comma
@@ -172,13 +181,16 @@ void parse_stat_option(const char *option)
 	log_msg("stat name: %s\n", stat_name);
 
 	// read the ev count into ev_amount
-	size = (positions[1] - positions[0]) - 1;
+	int end_of_arg = positions[1];
+	if (end_of_arg < 0) end_of_arg = strlen(option)+1;
+	size = (end_of_arg - positions[0]) - 1;
 	ev_amount = load_comma_arg(option+positions[0], size);
 	log_msg("ev count: %s\n", ev_amount);
 
 	// if we have a third arg, read the iv count into iv_amount
-	if (counted > 2) {
-		size = (strlen(option) - positions[1]) - 1;
+	if (counted > 1) {
+		log_msg("detected third comma arg");
+		size = strlen(option) - positions[1];
 		iv_amount = load_comma_arg(option+positions[1], size);
 		log_msg("iv count: %s\n", iv_amount);
 	}
@@ -199,12 +211,13 @@ void parse_stat_option(const char *option)
 
 	// the line below is awesome
 	pokemon.EV[stat] = atoi(ev_amount);
-	if (counted > 2) pokemon.IV[stat] = atoi(iv_amount);
+	if (iv_amount) pokemon.IV[stat] = atoi(iv_amount);
 
 
 	// clean up after ourselves
-	free(ev_amount);
 	free(stat_name);
+	if (ev_amount) free(ev_amount);
+	if (iv_amount) free(iv_amount);
 }
 
 char *load_token(jsmntok_t token, const char *json_string)
@@ -225,6 +238,7 @@ char *load_token(jsmntok_t token, const char *json_string)
 char *load_comma_arg(const char *arg, int size)
 {
 	char *comma_arg = NULL;
+	log_msg("alloc'ing %i bytes\n", size);
 	comma_arg = malloc(sizeof(char) * size);
 	if (!comma_arg) log_error("malloc():");
 
@@ -317,7 +331,10 @@ int set_Pokemon(char *key, char *value)
 	}
 
 	if (!strcmp(local_key, "level")) {
-		pokemon.level = atoi(local_value);
+		int potential_level = atoi(local_value);
+		if (potential_level > 0 && potential_level < 101)
+			pokemon.level = atoi(local_value);
+		else log_msg("level %s out of bounds\n", local_value);
 	}
 
 	if (!strcmp(local_key, "nature")) for (int i = 0; i < PKMN_NATURE_COUNT; i++) {
@@ -394,6 +411,7 @@ int main(int argc, char **argv)
 	struct Nature natures_memory[25];
 	natures = natures_memory;
 
+	// excuse this boiler plate
 	// create natures 	   |name|	|inc'd stat|	|decreased stat|
 	create_Nature(&natures[0], "hardy", 	0, 		0);
 	create_Nature(&natures[1], "lonely", 	ATTACK, 	DEFENSE);
@@ -411,7 +429,7 @@ int main(int argc, char **argv)
 	create_Nature(&natures[11], "hasty", 	SPEED,		DEFENSE);
 	create_Nature(&natures[12], "serious", 	0, 		0);
 	create_Nature(&natures[13], "jolly", 	SPEED, 		0);
-	create_Nature(&natures[14], "naive", 	SPEED, 	DEFENSE);
+	create_Nature(&natures[14], "naive", 	SPEED, 		DEFENSE);
 
 	create_Nature(&natures[15], "modest", 	SPATTACK, 	ATTACK);
 	create_Nature(&natures[16], "mild", 	SPATTACK, 	DEFENSE);
