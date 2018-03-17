@@ -44,6 +44,7 @@ static char* stats_strings[] = {
 
 static int verbose_flag = 0;
 static int from_file_flag = 0;
+static int from_argv_flag = 0;
 static char *json_string = NULL;
 static struct Pokemon pokemon;
 static struct Nature *natures;
@@ -121,6 +122,7 @@ int parse_options(int argc, char **argv)
 {
 	int c;
 	while ((c = getopt(argc, argv, "vp:f:l:n:s:")) != -1) {
+		from_argv_flag = 0;
 		switch (c) {
 		// options with regard to where we get our json
 		case 'p':
@@ -132,10 +134,12 @@ int parse_options(int argc, char **argv)
 			break;
 		// options with regard to our stats
 		case 'l':
-			//set_Pokemon("level", optarg);
+			from_argv_flag = 1;
+			set_Pokemon("level", optarg);
 			break;
 		case 'n':
-			//set_Pokemon("nature", optarg);
+			from_argv_flag = 1;
+			set_Pokemon("nature", optarg);
 			break;
 		case 's':
 			parse_stat_option(optarg);
@@ -311,8 +315,10 @@ int set_Pokemon(char *key, char *value)
 	local_key[key_size] = '\0';
 	local_value[value_size] = '\0';
 
-	free(key);
-	free(value);
+	/* only free if they aren't a literal 
+	 * and pointing to our program arguments*/
+	if (!from_argv_flag) free(key);
+	if (!from_argv_flag) free(value);
 
 	log_msg("setting %s to %s\n", local_key, local_value);
 
