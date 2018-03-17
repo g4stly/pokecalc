@@ -428,7 +428,7 @@ int main(int argc, char **argv)
 	create_Nature(&natures[10], "timid", 	SPEED, 		ATTACK);
 	create_Nature(&natures[11], "hasty", 	SPEED,		DEFENSE);
 	create_Nature(&natures[12], "serious", 	0, 		0);
-	create_Nature(&natures[13], "jolly", 	SPEED, 		0);
+	create_Nature(&natures[13], "jolly", 	SPEED, 		SPATTACK);
 	create_Nature(&natures[14], "naive", 	SPEED, 		DEFENSE);
 
 	create_Nature(&natures[15], "modest", 	SPATTACK, 	ATTACK);
