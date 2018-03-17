@@ -2,11 +2,11 @@
 a command line pokemon stat calculator for those command line wizards who are also pokemon masters
 ## USAGE
 Example usage:  
-`$ pokecalc -f bulbasaur.json -s spattack,252 -l50 -n modest -s speed,252`  
+`$ pokecalc -f bulbasaur.json -s spattack,252 -l 50 -n modest -s speed,252`  
 Example output:  
 ```
 == Bulbasaur ==
-level: 100
+level: 50
 nature: modest
 hp: 231
 attack: 120
