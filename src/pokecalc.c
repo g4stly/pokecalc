@@ -45,6 +45,7 @@ static char* stats_strings[] = {
 static int verbose_flag = 0;
 static int from_file_flag = 0;
 static int from_argv_flag = 0;
+static int from_stdin_flag = 1;
 static char *json_string = NULL;
 static struct Pokemon pokemon;
 static struct Nature *natures;
@@ -58,6 +59,7 @@ void parse_stat_option(const char *option);
 char *load_token(jsmntok_t token, const char *json_string);
 char *load_comma_arg(const char *arg, int size);
 char *load_from_file(const char *filename);
+void load_from_stdin(void);
 int calc_stat(int base);
 
 /* actually pokemon related */
@@ -97,7 +99,7 @@ void log_error(const char *fmt, ...)
 
 void parse_or_die(int res)
 {
-	if (from_file_flag) free(json_string);
+	if (from_file_flag || from_stdin_flag) free(json_string);
 	if (res < 0) {
 		switch(res) {
 		case JSMN_ERROR_INVAL:
@@ -126,9 +128,11 @@ int parse_options(int argc, char **argv)
 		switch (c) {
 		// options with regard to where we get our json
 		case 'p':
+			from_stdin_flag = 0;
 			json_string = optarg;
 			break;
 		case 'f':
+			from_stdin_flag = 0;
 			from_file_flag = 1;
 			json_string = load_from_file(optarg);
 			break;
@@ -280,6 +284,31 @@ char *load_from_file(const char *filename)
 	fclose(file);
 
 	return string;
+}
+
+void load_from_stdin(void)
+{
+	log_msg("now reading from stdin");
+	int increment = sizeof(char) * 8;
+	/* size keeps track of total memory allocated
+	 * json_size keeps track of how many bytes
+	 * we've written to that memory */
+	int size = increment, json_size = 0;
+	char *json_memory = malloc(size);
+	memset(json_memory, 0, size);
+
+	char c;
+	while ((c = fgetc(stdin)) != EOF) {
+		json_size = strlen(json_memory);
+		if (json_size + (sizeof(char) * 2) > size) { // weird math here for null byte
+			json_memory = realloc(json_memory, size + increment);
+			for (int i = 0; i < increment; i++) json_memory[size + i] = '\0';
+			size = size + increment;
+		}
+		json_memory[json_size] = c;
+	}
+
+	json_string = json_memory;
 }
 
 int calc_stat(int stat)
@@ -459,6 +488,8 @@ int main(int argc, char **argv)
 
 	// parse options
 	if (parse_options(argc, argv) < 0) return -1;
+
+	if (from_stdin_flag) load_from_stdin();
 
 	// parse json
 	parse_or_die(load_Pokemon(json_string));
