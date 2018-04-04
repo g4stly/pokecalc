@@ -1,6 +1,7 @@
 # pokecalc
 a command line pokemon stat calculator for those command line wizards who are also pokemon masters
-## USAGE
+## USAGE  
+Pokecalc was designed with a sister tool that's also on my github, pokepull. Typically when I use pokecalc I pipe the output of pokepull into it.  
 Example usage:  
 `$ pokepull garchomp | pokecalc -s attack,252 -s speed,252 -n adamant`
 Example output:  
